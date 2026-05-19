@@ -207,6 +207,7 @@ def stop():
 # ==========================================
 if __name__ == "__main__":
     print("=== Gesture Controller Test Mode ===")
+    
     print("A camera window should pop up!")
     print("Press Ctrl+C in the terminal to quit.\n")
 
