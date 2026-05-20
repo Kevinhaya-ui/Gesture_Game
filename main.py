@@ -96,7 +96,7 @@ def recognize_action(fingers):
 
     Gesture map:
       ✊ Fist (no fingers)        → None  (idle / stop moving)
-      ✌️  Index + Middle           → "dash"
+      ✌️  Index + Middle           → "attack"
       🤙 Pinky + Thumb            → "parry"
       🖐️  All 4 fingers + Thumb   → "special"
       ☝️  Index only              → None  (this is pointing, handled separately)
@@ -114,16 +114,12 @@ def recognize_action(fingers):
         return None
 
     # ☝️ Index only — this is the movement gesture, skip here
-    if index and not middle and not ring and not pinky:
+    if index and not thumb and not middle and not ring and not pinky:
         return None
-
-    # 🗡️ Index only (with thumb out) — attack
-    if index and thumb and not middle and not ring and not pinky:
-        return "attack"
 
     # ✌️ Index + Middle — dash
     if index and middle and not ring and not pinky:
-        return "dash"
+        return "attack"
 
     # 🤙 Pinky + Thumb — parry
     if pinky and thumb and not index and not middle and not ring:
@@ -263,7 +259,7 @@ def stop():
 if __name__ == "__main__":
     print("=== Gesture Controller — Pointing Mode ===")
     print("☝️  Point index finger → move character")
-    print("✌️  Index + Middle     → dash")
+    print("✌️  Index + Middle     → attack")
     print("🤙 Pinky + Thumb      → parry")
     print("🖐️  Open palm          → special")
     print("✊ Fist               → idle/stop")

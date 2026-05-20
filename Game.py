@@ -14,6 +14,9 @@ class Player:
     def __init__(self):
         self.sprite_sheet = pygame.image.load("Assets/keafhaa.png").convert_alpha()
         
+        self.sprite_attack = pygame.image.load("Assets/keafhaa_attacking.png").convert_alpha()
+        self.sprite_attack = pygame.transform.scale(self.sprite_attack, (32, 32))
+        
         self.frame_width = 64
         self.frame_height = 64
         
@@ -45,10 +48,26 @@ class Player:
         self.move_speed = 3.0        
         self.animation_speed = 0.1    
         self.frame_timer = 0.0        
-        self.is_moving = False        
+        self.is_moving = False
+        
+        self.is_attacking = False
+        self.attack_timer = 0
+        self.attack_duration = 30
+    
+    def trigger_attack(self):
+        if not self.is_attacking:
+            self.is_attacking = True
+            self.attack_timer = self.attack_duration        
 
     def update(self, direction):
+        
         self.is_moving = False
+        
+        if self.is_attacking:
+            self.attack_timer -= 1
+            if self.attack_timer <= 0:
+                self.is_attacking = False
+            return
         
         if direction is not None:
             self.is_moving = True
@@ -79,7 +98,15 @@ class Player:
             self.frame_timer = 0.0
 
     def draw(self, surface):
-        current_image = self.animations[self.current_direction][self.current_frame]
+        
+        if self.is_attacking:
+            current_image = self.sprite_attack
+            
+            if self.current_direction == "left":
+                current_image = pygame.transform.flip(current_image, True, False)
+        else:
+            current_image = self.animations[self.current_direction][self.current_frame]
+            
         surface.blit(current_image, self.rect)
 
 class Home:
@@ -200,6 +227,9 @@ while running:
         
         if home_screen.state == "gameplay":
             player.update(direction) 
+        
+            if action == "attack" and prev_action !="attack":
+                player.trigger_attack()
         
     if action == "parry" and prev_action != "parry":
         if home_screen.state == "menu":
