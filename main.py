@@ -7,106 +7,169 @@ import time
 # 1. SHARED STATE
 # ==========================================
 gesture_state = {
-    "vel_x":     0.0,
-    "vel_y":     0.0,
-    "action":    None,
+    "direction": None,    
+    "action":    None,    
     "hand_x":    0.5,
     "hand_y":    0.5,
     "active":    False,
 }
 
-# ==========================================
-# 2. 1:1 MOVEMENT SETTINGS & FILTERING
-# ==========================================
-_prev_x = None
-_prev_y = None
-SENSITIVITY = 15.0   # Multiplier: Semakin tinggi = karakter bergerak lebih jauh
-NOISE_FILTER = 0.005 # Mengabaikan getaran kecil kamera agar karakter bisa diam
+DEBOUNCE_FRAMES = 4
 
-# --- ACTION DEBOUNCE SETTINGS ---
-ACTION_THRESHOLD = 4      # Aksi harus ditahan selama 4 frame berturut-turut agar valid
-_candidate_action = None  # Menyimpan aksi sementara yang sedang dicek
-_action_frames = 0        # Menghitung berapa lama aksi tersebut bertahan
+_candidate_direction = None
+_direction_frames    = 0
+_candidate_action    = None
+_action_frames       = 0
 
 # ==========================================
-# 3. CORE FUNCTIONS
+# 3. FINGER STATE DETECTION
 # ==========================================
 def get_finger_states(landmarks):
+    
     fingers = {}
-    thumb_tip = landmarks[4]
-    thumb_ip  = landmarks[3]
-    fingers["thumb"] = thumb_tip.x < thumb_ip.x  
-    
-    fingers["index"]  = landmarks[8].y < landmarks[6].y
-    fingers["middle"] = landmarks[12].y < landmarks[10].y
-    fingers["ring"]   = landmarks[16].y < landmarks[14].y
-    fingers["pinky"]  = landmarks[20].y < landmarks[18].y
-    
+    wrist = landmarks[0] 
+
+    def is_extended(tip_idx, pip_idx):
+        tip = landmarks[tip_idx]
+        pip = landmarks[pip_idx]
+        dist_tip = (tip.x - wrist.x)**2 + (tip.y - wrist.y)**2
+        dist_pip = (pip.x - wrist.x)**2 + (pip.y - wrist.y)**2
+        
+        
+        return dist_tip > dist_pip
+
+    fingers["thumb"]  = is_extended(4, 2)
+    fingers["index"]  = is_extended(8, 6)
+    fingers["middle"] = is_extended(12, 10)
+    fingers["ring"]   = is_extended(16, 14)
+    fingers["pinky"]  = is_extended(20, 18)
+
     return fingers
 
-def recognize_gesture(fingers):
+# ==========================================
+# 4. POINTING DIRECTION DETECTION
+# ==========================================
+def get_pointing_direction(landmarks, fingers):
+    """
+    Detects which direction the index finger is pointing.
+    Only fires when ONLY the index finger is up (all others curled).
+
+    How it works:
+      - We take the INDEX FINGERTIP (landmark 8)
+        and the INDEX MCP knuckle (landmark 5) — the base of the finger.
+      - The vector from knuckle → fingertip tells us which way it's aimed.
+      - Whichever axis (X or Y) has the bigger difference wins.
+
+    Returns "up", "down", "left", "right", or None.
+    """
+    index  = fingers["index"]
+    middle = fingers["middle"]
+    ring   = fingers["ring"]
+    pinky  = fingers["pinky"]
+
+    # Must be ONLY index finger up — all others must be curled
+    if not index or middle or ring or pinky:
+        return None
+
+    # Fingertip (8) and base knuckle (5) of the index finger
+    tip  = landmarks[8]
+    base = landmarks[5]
+
+    # Vector from base → tip
+    dx = tip.x - base.x   # Positive = pointing right, Negative = pointing left
+    dy = tip.y - base.y   # Positive = pointing down,  Negative = pointing up
+
+    # The axis with the larger absolute value is the dominant direction
+    if abs(dx) > abs(dy):
+        return "right" if dx > 0 else "left"
+    else:
+        return "down" if dy > 0 else "up"
+
+# ==========================================
+# 5. ACTION GESTURE DETECTION
+# ==========================================
+def recognize_action(fingers):
+    """
+    Maps finger combinations to combat actions.
+    Only fires when the index finger is NOT the sole raised finger
+    (so pointing and actions don't clash).
+
+    Gesture map:
+      ✊ Fist (no fingers)        → None  (idle / stop moving)
+      ✌️  Index + Middle           → "dash"
+      🤙 Pinky + Thumb            → "parry"
+      🖐️  All 4 fingers + Thumb   → "special"
+      ☝️  Index only              → None  (this is pointing, handled separately)
+    """
     thumb  = fingers["thumb"]
     index  = fingers["index"]
     middle = fingers["middle"]
     ring   = fingers["ring"]
     pinky  = fingers["pinky"]
-    
-    fingers_up_count = sum([index, middle, ring, pinky])
-    
-    if fingers_up_count == 0 and not thumb:
-        return "idle"
+
+    fingers_up = sum([index, middle, ring, pinky])
+
+    # ✊ Closed fist — idle, stop all actions
+    if fingers_up == 0 and not thumb:
+        return None
+
+    # ☝️ Index only — this is the movement gesture, skip here
     if index and not middle and not ring and not pinky:
+        return None
+
+    # 🗡️ Index only (with thumb out) — attack
+    if index and thumb and not middle and not ring and not pinky:
         return "attack"
+
+    # ✌️ Index + Middle — dash
     if index and middle and not ring and not pinky:
         return "dash"
+
+    # 🤙 Pinky + Thumb — parry
     if pinky and thumb and not index and not middle and not ring:
         return "parry"
-        
-    # SYARAT DIPERKETAT: 4 Jari naik DAN Jempol juga harus naik (Buka telapak tangan penuh)
-    if fingers_up_count == 4 and thumb:
+
+    # 🖐️ All fingers + thumb — special
+    if fingers_up == 4 and thumb:
         return "special"
-        
+
     return None
 
-def update_movement_vectors(wrist_x, wrist_y):
-    global _prev_x, _prev_y
+# ==========================================
+# 6. DEBOUNCE HELPER
+# ==========================================
+def debounce(new_value, candidate, frame_count):
+    """
+    A gesture must stay the same for DEBOUNCE_FRAMES in a row
+    before we accept it. Prevents flickering on quick hand transitions.
 
-    if _prev_x is None or _prev_y is None:
-        _prev_x, _prev_y = wrist_x, wrist_y
-        return 0.0, 0.0
+    Returns (accepted_value, updated_candidate, updated_frame_count)
+    """
+    if new_value == candidate:
+        frame_count += 1
+    else:
+        candidate    = new_value
+        frame_count  = 1
 
-    dx = wrist_x - _prev_x
-    dy = wrist_y - _prev_y
-
-    _prev_x, _prev_y = wrist_x, wrist_y
-
-    if abs(dx) < NOISE_FILTER: dx = 0.0
-    if abs(dy) < NOISE_FILTER: dy = 0.0
-
-    vel_x = dx * SENSITIVITY
-    vel_y = dy * SENSITIVITY
-
-    vel_x = max(-1.0, min(1.0, vel_x))
-    vel_y = max(-1.0, min(1.0, vel_y))
-
-    return vel_x, vel_y
+    accepted = candidate if frame_count >= DEBOUNCE_FRAMES else None
+    return accepted, candidate, frame_count
 
 # ==========================================
-# 4. BACKGROUND THREAD (With Visuals & Filter)
+# 7. BACKGROUND THREAD
 # ==========================================
 def _gesture_loop(stop_event):
-    # Deklarasi semua global variabel di awal
-    global _prev_x, _prev_y, _candidate_action, _action_frames  
+    global _candidate_direction, _direction_frames
+    global _candidate_action, _action_frames
 
-    mp_hands = mp.solutions.hands
-    mp_drawing = mp.solutions.drawing_utils        
-    mp_drawing_styles = mp.solutions.drawing_styles 
+    mp_hands          = mp.solutions.hands
+    mp_drawing        = mp.solutions.drawing_utils
+    mp_drawing_styles = mp.solutions.drawing_styles
 
     hands = mp_hands.Hands(
-        static_image_mode=False,        
-        max_num_hands=1,                
-        min_detection_confidence=0.7,   
-        min_tracking_confidence=0.6,    
+        static_image_mode=False,
+        max_num_hands=1,
+        min_detection_confidence=0.7,
+        min_tracking_confidence=0.6,
     )
 
     cap = cv2.VideoCapture(0)
@@ -114,77 +177,69 @@ def _gesture_loop(stop_event):
         print("[Error] Could not open webcam.")
         return
 
-    print("[System] Webcam opened. Detecting gestures...")
+    print("[System] Webcam opened. Point your index finger to move!")
 
     while not stop_event.is_set():
         success, frame = cap.read()
         if not success:
             continue
 
-        frame = cv2.flip(frame, 1) # Mirror the camera
+        frame     = cv2.flip(frame, 1)
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = hands.process(frame_rgb)
+        results   = hands.process(frame_rgb)
 
         if results.multi_hand_landmarks:
             hand_landmarks = results.multi_hand_landmarks[0]
-            
-            # --- Draw the skeletal hand on the camera feed ---
+
+            # Draw skeleton on camera feed (visible in debug window if you add imshow)
             mp_drawing.draw_landmarks(
                 frame,
                 hand_landmarks,
                 mp_hands.HAND_CONNECTIONS,
                 mp_drawing_styles.get_default_hand_landmarks_style(),
-                mp_drawing_styles.get_default_hand_connections_style()
+                mp_drawing_styles.get_default_hand_connections_style(),
             )
 
-            wrist = hand_landmarks.landmark[0]
-            
-            # --- Update math ---
-            vel_x, vel_y = update_movement_vectors(wrist.x, wrist.y)
-            fingers = get_finger_states(hand_landmarks.landmark)
-            
-            # --- 1. Dapatkan aksi mentah dari AI ---
-            raw_action = recognize_gesture(fingers)
+            landmarks = hand_landmarks.landmark
+            wrist     = landmarks[0]
+            fingers   = get_finger_states(landmarks)
 
-            # --- 2. Filter Aksi (Debouncing) ---
-            if raw_action == _candidate_action:
-                _action_frames += 1  # Aksinya masih sama, tambah hitungan
-            else:
-                _candidate_action = raw_action # Aksinya berubah, reset hitungan
-                _action_frames = 1
+            # --- Raw values this frame ---
+            raw_direction = get_pointing_direction(landmarks, fingers)
+            raw_action    = recognize_action(fingers)
 
-            # --- 3. Tentukan aksi final ---
-            final_action = None
-            if _action_frames >= ACTION_THRESHOLD:
-                final_action = _candidate_action
+            # --- Debounce both ---
+            direction, _candidate_direction, _direction_frames = debounce(
+                raw_direction, _candidate_direction, _direction_frames
+            )
+            action, _candidate_action, _action_frames = debounce(
+                raw_action, _candidate_action, _action_frames
+            )
 
-            # --- 4. Tulis ke state global ---
-            gesture_state["vel_x"]   = vel_x
-            gesture_state["vel_y"]   = vel_y
-            gesture_state["action"]  = final_action
-            gesture_state["hand_x"]  = wrist.x
-            gesture_state["hand_y"]  = wrist.y
-            gesture_state["active"]  = True
-            
+            # --- Write to shared state ---
+            gesture_state["direction"] = direction
+            gesture_state["action"]    = action
+            gesture_state["hand_x"]    = wrist.x
+            gesture_state["hand_y"]    = wrist.y
+            gesture_state["active"]    = True
+
         else:
-            # Hand left the camera! Clear states and reset the tracking anchors.
-            _prev_x = None
-            _prev_y = None
-            _candidate_action = None
-            _action_frames = 0
-            
-            gesture_state["vel_x"]   = 0.0
-            gesture_state["vel_y"]   = 0.0
-            gesture_state["action"]  = None
-            gesture_state["active"]  = False
+            # No hand — reset everything
+            _candidate_direction = None
+            _direction_frames    = 0
+            _candidate_action    = None
+            _action_frames       = 0
 
+            gesture_state["direction"] = None
+            gesture_state["action"]    = None
+            gesture_state["active"]    = False
 
     cap.release()
-    cv2.destroyAllWindows() # Close the window when done
+    cv2.destroyAllWindows()
     hands.close()
 
 # ==========================================
-# 5. THREAD CONTROLS
+# 8. THREAD CONTROLS
 # ==========================================
 _thread     = None
 _stop_event = None
@@ -203,31 +258,36 @@ def stop():
         _thread.join(timeout=2)
 
 # ==========================================
-# 6. TEST MODE
+# 9. TEST MODE
 # ==========================================
 if __name__ == "__main__":
-    print("=== Gesture Controller Test Mode ===")
-    
-    print("A camera window should pop up!")
-    print("Press Ctrl+C in the terminal to quit.\n")
+    print("=== Gesture Controller — Pointing Mode ===")
+    print("☝️  Point index finger → move character")
+    print("✌️  Index + Middle     → dash")
+    print("🤙 Pinky + Thumb      → parry")
+    print("🖐️  Open palm          → special")
+    print("✊ Fist               → idle/stop")
+    print("Press Ctrl+C to quit.\n")
 
     start()
-    
+
     try:
         while True:
-            # Print the stats so you can verify the tracking & filtering is working!
-            vx = gesture_state['vel_x']
-            vy = gesture_state['vel_y']
-            act = str(gesture_state['action'])
-            active = gesture_state['active']
-            
+            active    = gesture_state["active"]
+            direction = gesture_state["direction"]
+            action    = gesture_state["action"]
+
             if active:
-                print(f"Tracking | Vel X: {vx:+.2f} | Vel Y: {vy:+.2f} | Action: {act:<8}")
+                print(
+                    f"  Direction: {str(direction):<6} | "
+                    f"Action: {str(action):<8} | "
+                    f"Wrist: ({gesture_state['hand_x']:.2f}, {gesture_state['hand_y']:.2f})"
+                )
             else:
-                print("No hand detected...")
-                
-            time.sleep(0.1) # Print 10 times a second
+                print("  No hand detected...")
+
+            time.sleep(0.1)
 
     except KeyboardInterrupt:
         print("\nStopping...")
-        stop()
+        stop()  

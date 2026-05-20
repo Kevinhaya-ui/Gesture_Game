@@ -24,17 +24,12 @@ class Player:
             "up": []     
         }
         
-        
         directions = ["down", "left", "right", "up"]
         for row in range(4):
             direction_name = directions[row]
             for col in range(4):
-                
                 cut_rect = pygame.Rect(col * self.frame_width, row * self.frame_height, self.frame_width, self.frame_height)
-                
-                
                 single_frame = pygame.Surface((self.frame_width, self.frame_height), pygame.SRCALPHA).convert_alpha()
-                
                 single_frame.blit(self.sprite_sheet, (0, 0), cut_rect)
                 single_frame = pygame.transform.scale(single_frame, (32, 32))
                 self.animations[direction_name].append(single_frame)
@@ -47,26 +42,26 @@ class Player:
         self.exact_x = float(self.rect.x)
         self.exact_y = float(self.rect.y)
         
-        self.move_speed = 25.0         
+        self.move_speed = 3.0        
         self.animation_speed = 0.1    
-        self.frame_timer = 0.0         
-        self.is_moving = False         
+        self.frame_timer = 0.0        
+        self.is_moving = False        
 
-    def update(self, vel_x, vel_y):
+    def update(self, direction):
         self.is_moving = False
         
-        deadzone = 0.02
-        
-        if abs(vel_x) > deadzone or abs(vel_y) > deadzone:
+        if direction is not None:
             self.is_moving = True
+            self.current_direction = direction 
             
-            if abs(vel_x) > abs(vel_y):
-                self.current_direction = "right" if vel_x > 0 else "left"
-            else:
-                self.current_direction = "down" if vel_y > 0 else "up"
-            
-            self.exact_x += vel_x * self.move_speed
-            self.exact_y += vel_y * self.move_speed
+            if direction == "up":
+                self.exact_y -= self.move_speed
+            elif direction == "down":
+                self.exact_y += self.move_speed
+            elif direction == "left":
+                self.exact_x -= self.move_speed
+            elif direction == "right":
+                self.exact_x += self.move_speed
             
             self.exact_x = max(0, min(self.exact_x, SCREEN_WIDTH - self.rect.width))
             self.exact_y = max(0, min(self.exact_y, SCREEN_HEIGHT - self.rect.height))
@@ -76,7 +71,6 @@ class Player:
 
         if self.is_moving:
             self.frame_timer += self.animation_speed
-            
             if self.frame_timer >= 1.0:
                 self.frame_timer = 0.0
                 self.current_frame = (self.current_frame + 1) % 4
@@ -88,11 +82,8 @@ class Player:
         current_image = self.animations[self.current_direction][self.current_frame]
         surface.blit(current_image, self.rect)
 
-
-
 class Home:
     def __init__(self):
-        
         self.state = "menu"
         
         self.background = pygame.image.load("Assets/homeui.png").convert_alpha()
@@ -173,7 +164,6 @@ class Home:
         if self.state != "gameplay":
             surface.blit(self.cursor, self.cursor_rect)
 
-#MAIN DISINI
 
 home_screen = Home()
 player = Player() 
@@ -183,7 +173,6 @@ running = True
 prev_action = None
 
 while running:
-
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -199,20 +188,19 @@ while running:
                     print("Back to Home Screen!")
                     home_screen.state = "menu"
 
-    vx = main.gesture_state['vel_x']
-    vy = main.gesture_state['vel_y']
+   
     hx = main.gesture_state['hand_x']
     hy = main.gesture_state['hand_y']
     active = main.gesture_state["active"]
     action = main.gesture_state["action"]
+    direction = main.gesture_state["direction"] 
     
     if active:
         home_screen.cursor_update(hx, hy)
         
         if home_screen.state == "gameplay":
-            player.update(vx, vy)
+            player.update(direction) 
         
-    
     if action == "parry" and prev_action != "parry":
         if home_screen.state == "menu":
             if home_screen.cursor_rect.colliderect(home_screen.start_rect):
