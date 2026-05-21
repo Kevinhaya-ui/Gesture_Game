@@ -12,6 +12,7 @@ gesture_state = {
     "hand_x":    0.5,
     "hand_y":    0.5,
     "active":    False,
+    "frame" :    None,
 }
 
 DEBOUNCE_FRAMES = 4
@@ -195,6 +196,9 @@ def _gesture_loop(stop_event):
                 mp_drawing_styles.get_default_hand_landmarks_style(),
                 mp_drawing_styles.get_default_hand_connections_style(),
             )
+            
+            frame_rgb_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            gesture_state["frame"] = frame_rgb_display
 
             landmarks = hand_landmarks.landmark
             wrist     = landmarks[0]

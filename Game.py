@@ -248,6 +248,15 @@ while running:
     prev_action = action
 
     home_screen.draw(screen, player)  
+    
+    cam_frame =main.gesture_state["frame"]
+    if cam_frame is not None:
+        cam_surface = pygame.image.frombuffer(cam_frame.tobytes(), (cam_frame.shape[1], cam_frame.shape[0]), "RGB")
+    
+        cam_surface = pygame.transform.scale(cam_surface, (320, 240))
+        pygame.draw.rect(cam_surface, (255, 255, 255), cam_surface.get_rect(), 3)
+        screen.blit(cam_surface, (20, SCREEN_HEIGHT - 240 - 20))
+        
     pygame.display.flip()
     clock.tick(60) 
     
