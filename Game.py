@@ -1,6 +1,9 @@
 import pygame
 import sys
 import main  
+import math
+import random
+
 
 pygame.init()
 
@@ -34,6 +37,7 @@ class Player:
                 cut_rect = pygame.Rect(col * self.frame_width, row * self.frame_height, self.frame_width, self.frame_height)
                 single_frame = pygame.Surface((self.frame_width, self.frame_height), pygame.SRCALPHA).convert_alpha()
                 single_frame.blit(self.sprite_sheet, (0, 0), cut_rect)
+                # Ukuran dasar di Map 1 (32x32)
                 single_frame = pygame.transform.scale(single_frame, (32, 32))
                 self.animations[direction_name].append(single_frame)
         
@@ -60,7 +64,6 @@ class Player:
             self.attack_timer = self.attack_duration        
 
     def update(self, direction):
-        
         self.is_moving = False
         
         if self.is_attacking:
@@ -97,30 +100,128 @@ class Player:
             self.current_frame = 0
             self.frame_timer = 0.0
 
-    def draw(self, surface):
-        
+    # --- PERUBAHAN: Tambahkan parameter is_battle ---
+    def draw(self, surface, is_battle=False):
         if self.is_attacking:
             current_image = self.sprite_attack
-            
             if self.current_direction == "left":
                 current_image = pygame.transform.flip(current_image, True, False)
         else:
             current_image = self.animations[self.current_direction][self.current_frame]
             
-        surface.blit(current_image, self.rect)
+        # Jika sedang di Battle Map, perbesar gambarnya saat di-draw
+        if is_battle:
+            # Perbesar menjadi 56x56 pixel (bisa disesuaikan ukurannya)
+            bigger_image = pygame.transform.scale(current_image, (56, 56))
+            # Sesuaikan posisinya agar tetap di tengah koordinat aslinya
+            draw_rect = bigger_image.get_rect(center=self.rect.center)
+            surface.blit(bigger_image, draw_rect)
+        else:
+            surface.blit(current_image, self.rect)
+
+class Companion:
+    def __init__(self, sprite_path):
+        self.sprite_sheet = pygame.image.load(sprite_path).convert_alpha()
+        self.frame_width = 64
+        self.frame_height = 64
+        self.animations = {"down": [], "left": [], "right": [], "up": []}
+        
+        directions = ["down", "left", "right", "up"]
+        for row in range(4):
+            direction_name = directions[row]
+            for col in range(4):
+                cut_rect = pygame.Rect(col * self.frame_width, row * self.frame_height, self.frame_width, self.frame_height)
+                single_frame = pygame.Surface((self.frame_width, self.frame_height), pygame.SRCALPHA).convert_alpha()
+                single_frame.blit(self.sprite_sheet, (0, 0), cut_rect)
+                single_frame = pygame.transform.scale(single_frame, (32, 32))
+                self.animations[direction_name].append(single_frame)
+        
+        self.current_direction = "down" 
+        self.current_frame = 0          
+        self.rect = self.animations["down"][0].get_rect()
+        
+        self.exact_x = 0.0
+        self.exact_y = 0.0
+        
+        self.move_speed = 3.0 
+        self.animation_speed = 0.1    
+        self.frame_timer = 0.0        
+        self.is_moving = False
+        
+        self.history_positions = []
+        self.follow_delay = 15 
+
+    def set_initial_position(self, start_x, start_y):
+        self.exact_x = float(start_x)
+        self.exact_y = float(start_y)
+        self.rect.x = int(self.exact_x)
+        self.rect.y = int(self.exact_y)
+        self.history_positions = [(self.exact_x, self.exact_y, "down")] * self.follow_delay
+
+    def update(self, leader_x, leader_y, leader_direction, leader_is_moving):
+        if leader_is_moving:
+            self.history_positions.append((leader_x, leader_y, leader_direction))
+            
+        if len(self.history_positions) > self.follow_delay:
+            target_x, target_y, target_dir = self.history_positions.pop(0)
+            
+            if (self.exact_x != target_x) or (self.exact_y != target_y):
+                self.is_moving = True
+                self.current_direction = target_dir
+                
+                self.exact_x = target_x
+                self.exact_y = target_y
+                self.rect.x = int(self.exact_x)
+                self.rect.y = int(self.exact_y)
+            else:
+                self.is_moving = False
+        else:
+            self.is_moving = False
+
+        if self.is_moving:
+            self.frame_timer += self.animation_speed
+            if self.frame_timer >= 1.0:
+                self.frame_timer = 0.0
+                self.current_frame = (self.current_frame + 1) % 4
+        else:
+            self.current_frame = 0
+            self.frame_timer = 0.0
+
+    # --- PERUBAHAN: Tambahkan parameter is_battle ---
+    def draw(self, surface, is_battle=False):
+        current_image = self.animations[self.current_direction][self.current_frame]
+        
+        # Logika perbesar gambar khusus di Battle Map
+        if is_battle:
+            bigger_image = pygame.transform.scale(current_image, (56, 56))
+            draw_rect = bigger_image.get_rect(center=self.rect.center)
+            surface.blit(bigger_image, draw_rect)
+        else:
+            surface.blit(current_image, self.rect)
 
 class Home:
     def __init__(self):
         self.state = "menu"
         
-        self.background = pygame.image.load("Assets/homeui.png").convert_alpha()
-        self.background = pygame.transform.scale(self.background, (SCREEN_WIDTH, SCREEN_HEIGHT))
+        self.background3    = pygame.image.load("Assets/swampmap.png").convert_alpha()
+        self.swamp_map      = pygame.transform.scale(self.background3, (SCREEN_WIDTH, SCREEN_HEIGHT))
         
-        self.aboutpage = pygame.image.load("Assets/AboutPage.png").convert_alpha()
-        self.aboutpage = pygame.transform.scale(self.aboutpage, (SCREEN_WIDTH, SCREEN_HEIGHT))
+        self.transition_img = pygame.image.load("Assets/transition.png").convert_alpha()
+        self.transition_img = pygame.transform.scale(self.transition_img, (683, 683))
         
-        self.map_1 = pygame.image.load("Assets/Gameplay_map1.png").convert_alpha()
-        self.map_1 = pygame.transform.scale(self.map_1, (SCREEN_WIDTH, SCREEN_HEIGHT))
+        self.background2    = pygame.image.load("Assets/battlemap.png").convert_alpha()
+        self.battle_map     = pygame.transform.scale(self.background2, (SCREEN_WIDTH, SCREEN_HEIGHT))
+        
+        self.background     = pygame.image.load("Assets/homeui.png").convert_alpha()
+        self.background     = pygame.transform.scale(self.background, (SCREEN_WIDTH, SCREEN_HEIGHT))
+        
+        self.aboutpage      = pygame.image.load("Assets/AboutPage.png").convert_alpha()
+        self.aboutpage      = pygame.transform.scale(self.aboutpage, (SCREEN_WIDTH, SCREEN_HEIGHT))
+        
+        self.map_1          = pygame.image.load("Assets/Gameplay_map1.png").convert_alpha()
+        self.map_1          = pygame.transform.scale(self.map_1, (SCREEN_WIDTH, SCREEN_HEIGHT))
+
+        self.gate_rect = pygame.Rect(1050, 0, 250, 100) 
 
         self.start = pygame.image.load("Assets/StartButton.png").convert_alpha()
         self.start_hover = pygame.image.load("Assets/StartButtonPressed.png").convert_alpha()
@@ -162,7 +263,7 @@ class Home:
         self.cursor_rect.x = int(self.exact_x)
         self.cursor_rect.y = int(self.exact_y)
         
-    def draw(self, surface, player_obj):
+    def draw(self, surface, player_obj=None):
         if self.state == "menu":
             surface.blit(self.background, (0, 0))
 
@@ -183,17 +284,109 @@ class Home:
             
         elif self.state == "about":
             surface.blit(self.aboutpage, (0, 0))
+
+class Enemy:
+    def __init__(self, target_obj):
+        # 1. Pilih jenis monster secara acak antara 1 atau 2
+        monster_type = random.choice([1, 2])
+        
+        # Load Sprite Sheet Monster yang dipilih
+        self.sprite_sheet = pygame.image.load(f"Assets/Monster{monster_type}.png").convert_alpha()
+        
+        # 2. Potong Gambar 4x4 (Mendeteksi otomatis ukuran asli gambarnya)
+        self.frame_width = self.sprite_sheet.get_width() // 4
+        self.frame_height = self.sprite_sheet.get_height() // 4
+        
+        self.animations = {"down": [], "left": [], "right": [], "up": []}
+        
+        directions = ["down", "left", "right", "up"]
+        for row in range(4):
+            direction_name = directions[row]
+            for col in range(4):
+                cut_rect = pygame.Rect(col * self.frame_width, row * self.frame_height, self.frame_width, self.frame_height)
+                single_frame = pygame.Surface((self.frame_width, self.frame_height), pygame.SRCALPHA).convert_alpha()
+                single_frame.blit(self.sprite_sheet, (0, 0), cut_rect)
+                
+                # Skalakan monster menjadi 48x48 piksel (sedikit lebih besar)
+                single_frame = pygame.transform.scale(single_frame, (48, 48))
+                self.animations[direction_name].append(single_frame)
+
+        # 3. Status Awal Animasi
+        self.current_direction = "down"
+        self.current_frame = 0
+        self.rect = self.animations["down"][0].get_rect()
+        
+        self.target = target_obj 
+        self.speed = 1.5 
+        self.animation_speed = 0.15
+        self.frame_timer = 0.0
+        
+        # 4. Logika Spawn di Pinggir Layar
+        spawn_edge = random.choice(["top", "bottom", "left", "right"])
+        
+        if spawn_edge == "top":
+            self.exact_x = random.uniform(0, SCREEN_WIDTH)
+            self.exact_y = -60
+        elif spawn_edge == "bottom":
+            self.exact_x = random.uniform(0, SCREEN_WIDTH)
+            self.exact_y = SCREEN_HEIGHT + 60
+        elif spawn_edge == "left":
+            self.exact_x = -60
+            self.exact_y = random.uniform(0, SCREEN_HEIGHT)
+        else: # "right"
+            self.exact_x = SCREEN_WIDTH + 60
+            self.exact_y = random.uniform(0, SCREEN_HEIGHT)
+
+        self.rect.x = int(self.exact_x)
+        self.rect.y = int(self.exact_y)
+
+    def update(self):
+        # Hitung selisih jarak menuju target
+        dx = self.target.exact_x - self.exact_x
+        dy = self.target.exact_y - self.exact_y
+        
+        distance = math.hypot(dx, dy)
+        
+        if distance != 0:
+            # Bergerak menuju target
+            self.exact_x += (dx / distance) * self.speed
+            self.exact_y += (dy / distance) * self.speed
             
-        elif self.state == "gameplay":
-            surface.blit(self.map_1, (0, 0))
-            player_obj.draw(surface)
+            # --- TENTUKAN ARAH MENGHADAP BERDASARKAN GERAKAN ---
+            if abs(dx) > abs(dy):
+                self.current_direction = "right" if dx > 0 else "left"
+            else:
+                self.current_direction = "down" if dy > 0 else "up"
 
-        if self.state != "gameplay":
-            surface.blit(self.cursor, self.cursor_rect)
+            # --- JALANKAN ANIMASI BERJALAN ---
+            self.frame_timer += self.animation_speed
+            if self.frame_timer >= 1.0:
+                self.frame_timer = 0.0
+                self.current_frame = (self.current_frame + 1) % 4
+                
+        self.rect.x = int(self.exact_x)
+        self.rect.y = int(self.exact_y)
 
-
+    def draw(self, surface):
+        # Gambar frame monster sesuai arah dan langkahnya saat ini
+        current_image = self.animations[self.current_direction][self.current_frame]
+        surface.blit(current_image, self.rect)
+    
 home_screen = Home()
 player = Player() 
+
+vanola = Companion("Assets/vanola.png")
+vanola.set_initial_position(player.exact_x, player.exact_y)
+
+enemies_list = []      
+spawn_timer = 0        
+spawn_interval = 120   
+
+total_spawned = 0      
+max_monsters = 20      
+wave_cleared = False  
+transition_timer = 0 
+
 main.start()
 
 running = True
@@ -207,15 +400,12 @@ while running:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
                 if home_screen.state == "about":
-                    print("Back to Home Screen!")
                     home_screen.state = "menu" 
-            
             elif event.key == pygame.K_ESCAPE:
-                if home_screen.state == "gameplay":
-                    print("Back to Home Screen!")
+                # Tambahkan "swamp" agar bisa tekan ESC di map 3
+                if home_screen.state in ["gameplay", "battle", "swamp"]:
                     home_screen.state = "menu"
 
-   
     hx = main.gesture_state['hand_x']
     hy = main.gesture_state['hand_y']
     active = main.gesture_state["active"]
@@ -225,34 +415,126 @@ while running:
     if active:
         home_screen.cursor_update(hx, hy)
         
-        if home_screen.state == "gameplay":
+        # Tambahkan "swamp" agar karakter bisa bergerak di map 3
+        if home_screen.state in ["gameplay", "battle", "swamp"]:
             player.update(direction) 
-        
-            if action == "attack" and prev_action !="attack":
+            vanola.update(player.exact_x, player.exact_y, player.current_direction, player.is_moving)
+            
+            if action == "attack" and prev_action != "attack":
                 player.trigger_attack()
+                
+                attack_hitbox = player.rect.inflate(80, 80)
+                
+                surviving_enemies = []
+                for enemy in enemies_list:
+                    if not attack_hitbox.colliderect(enemy.rect):
+                        surviving_enemies.append(enemy)
+                    else:
+                        print("M kill") 
+                        
+                enemies_list = surviving_enemies
         
     if action == "parry" and prev_action != "parry":
         if home_screen.state == "menu":
             if home_screen.cursor_rect.colliderect(home_screen.start_rect):
-                print("start the Game! Switching to Map 1")
+                player.exact_x = SCREEN_WIDTH // 2
+                player.exact_y = SCREEN_HEIGHT // 2
+                player.rect.x = int(player.exact_x)
+                player.rect.y = int(player.exact_y)
+                vanola.set_initial_position(player.exact_x, player.exact_y)
+                
+                enemies_list.clear() 
+                total_spawned = 0
+                wave_cleared = False
+                
                 home_screen.state = "gameplay" 
-                
             elif home_screen.cursor_rect.colliderect(home_screen.about_rect):
-                print("Show the About Page")
                 home_screen.state = "about"
-                
             elif home_screen.cursor_rect.colliderect(home_screen.exit_rect):
-                print("Exit the Game")
                 running = False
 
     prev_action = action
 
-    home_screen.draw(screen, player)  
-    
-    cam_frame =main.gesture_state["frame"]
+    # --- PENGATURAN MENGGAMBAR LAYAR ---
+    if home_screen.state == "gameplay":
+        screen.blit(home_screen.map_1, (0, 0))
+        vanola.draw(screen)  
+        player.draw(screen)  
+        
+        if player.rect.colliderect(home_screen.gate_rect):
+            print("Pindah ke Battle Map!")
+            home_screen.state = "battle"
+            
+            player.exact_x = SCREEN_WIDTH // 2
+            player.exact_y = SCREEN_HEIGHT - 150
+            player.rect.x = int(player.exact_x)
+            player.rect.y = int(player.exact_y)
+            vanola.set_initial_position(player.exact_x, player.exact_y)
+            
+            enemies_list.clear()
+            total_spawned = 0
+            wave_cleared = False
+
+    elif home_screen.state == "battle":
+        screen.blit(home_screen.battle_map, (0, 0))
+        
+        if not wave_cleared:
+            spawn_timer += 1
+            if spawn_timer >= spawn_interval:
+                if total_spawned < max_monsters:
+                    new_enemy = Enemy(target_obj=vanola)
+                    enemies_list.append(new_enemy)
+                    total_spawned += 1 
+                spawn_timer = 0 
+            
+            # --- LOGIKA PINDAH KE TRANSISI (CUTSCENE) ---
+            if total_spawned >= max_monsters and len(enemies_list) == 0:
+                print("STAGE CLEARED! MENAMPILKAN GAMBAR TRANSISI!")
+                wave_cleared = True 
+                
+                # Ganti state ke "transition" DULU, bukan langsung "swamp"
+                home_screen.state = "transition"
+                transition_timer = 0 # Mulai hitung waktu transisinya
+
+        for enemy in enemies_list:
+            enemy.update()
+            enemy.draw(screen)
+            
+        vanola.draw(screen, is_battle=True)
+        player.draw(screen, is_battle=True)
+        
+    # --- RENDER GAMBAR TRANSISI ---
+    elif home_screen.state == "transition":
+       
+        screen.blit(home_screen.transition_img, (0, 0))
+        
+        
+        transition_timer += 1
+        if transition_timer >= 180:
+            print("WAKTU HABIS! PINDAH KE RAWA-RAWA!")
+            home_screen.state = "swamp"
+            
+            # Reset posisi karakter untuk map rawa
+            player.exact_x = SCREEN_WIDTH // 2
+            player.exact_y = SCREEN_HEIGHT - 150
+            player.rect.x = int(player.exact_x)
+            player.rect.y = int(player.exact_y)
+            vanola.set_initial_position(player.exact_x, player.exact_y)
+        
+    # --- RENDER MAP KE-3 ---
+    elif home_screen.state == "swamp":
+        screen.blit(home_screen.swamp_map, (0, 0))
+        
+        vanola.draw(screen)  
+        player.draw(screen)
+        
+    else:
+        home_screen.draw(screen) 
+        screen.blit(home_screen.cursor, home_screen.cursor_rect)
+
+    cam_frame = main.gesture_state["frame"]
     if cam_frame is not None:
         cam_surface = pygame.image.frombuffer(cam_frame.tobytes(), (cam_frame.shape[1], cam_frame.shape[0]), "RGB")
-    
         cam_surface = pygame.transform.scale(cam_surface, (320, 240))
         pygame.draw.rect(cam_surface, (255, 255, 255), cam_surface.get_rect(), 3)
         screen.blit(cam_surface, (20, SCREEN_HEIGHT - 240 - 20))

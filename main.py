@@ -169,7 +169,11 @@ def _gesture_loop(stop_event):
         min_tracking_confidence=0.6,
     )
 
-    cap = cv2.VideoCapture(0)
+
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    
     if not cap.isOpened():
         print("[Error] Could not open webcam.")
         return
@@ -188,7 +192,7 @@ def _gesture_loop(stop_event):
         if results.multi_hand_landmarks:
             hand_landmarks = results.multi_hand_landmarks[0]
 
-            # Draw skeleton on camera feed (visible in debug window if you add imshow)
+            # Draw skeleton on camera feed
             mp_drawing.draw_landmarks(
                 frame,
                 hand_landmarks,
@@ -196,19 +200,14 @@ def _gesture_loop(stop_event):
                 mp_drawing_styles.get_default_hand_landmarks_style(),
                 mp_drawing_styles.get_default_hand_connections_style(),
             )
-            
-            frame_rgb_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            gesture_state["frame"] = frame_rgb_display
 
             landmarks = hand_landmarks.landmark
             wrist     = landmarks[0]
             fingers   = get_finger_states(landmarks)
 
-            # --- Raw values this frame ---
             raw_direction = get_pointing_direction(landmarks, fingers)
             raw_action    = recognize_action(fingers)
 
-            # --- Debounce both ---
             direction, _candidate_direction, _direction_frames = debounce(
                 raw_direction, _candidate_direction, _direction_frames
             )
@@ -216,7 +215,6 @@ def _gesture_loop(stop_event):
                 raw_action, _candidate_action, _action_frames
             )
 
-            # --- Write to shared state ---
             gesture_state["direction"] = direction
             gesture_state["action"]    = action
             gesture_state["hand_x"]    = wrist.x
@@ -233,6 +231,16 @@ def _gesture_loop(stop_event):
             gesture_state["direction"] = None
             gesture_state["action"]    = None
             gesture_state["active"]    = False
+
+        # =========================================================
+        # PERBAIKAN: PINDAHKAN 2 BARIS INI KE SINI (Di luar if/else)
+        # Apapun yang terjadi (ada tangan/tidak), tetap update layarnya!
+        # =========================================================
+        frame_rgb_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        gesture_state["frame"] = frame_rgb_display.copy()
+
+        # Beri nafas untuk CPU (jangan dihapus)
+        time.sleep(0.001)
 
     cap.release()
     cv2.destroyAllWindows()
