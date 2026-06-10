@@ -4,7 +4,6 @@ import main
 import math
 import random
 
-
 pygame.init()
 
 SCREEN_WIDTH = 1440
@@ -13,6 +12,9 @@ screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Kevin Afkar Haya - 5024251016")
 clock = pygame.time.Clock()
 
+# ==========================================
+# KELAS PLAYER (Karakter Utama)
+# ==========================================
 class Player:
     def __init__(self):
         self.sprite_sheet = pygame.image.load("Assets/keafhaa.png").convert_alpha()
@@ -37,13 +39,12 @@ class Player:
                 cut_rect = pygame.Rect(col * self.frame_width, row * self.frame_height, self.frame_width, self.frame_height)
                 single_frame = pygame.Surface((self.frame_width, self.frame_height), pygame.SRCALPHA).convert_alpha()
                 single_frame.blit(self.sprite_sheet, (0, 0), cut_rect)
-                # Ukuran dasar di Map 1 (32x32)
                 single_frame = pygame.transform.scale(single_frame, (32, 32))
                 self.animations[direction_name].append(single_frame)
         
         self.current_direction = "down" 
         self.current_frame = 0          
-        self.rect = self.animations["down"][0].get_rect()
+        self.rect = self.animations["down"][0].get_rect() #kotak frame deteksi tabrakan
         self.rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
         
         self.exact_x = float(self.rect.x)
@@ -100,7 +101,6 @@ class Player:
             self.current_frame = 0
             self.frame_timer = 0.0
 
-    # --- PERUBAHAN: Tambahkan parameter is_battle ---
     def draw(self, surface, is_battle=False):
         if self.is_attacking:
             current_image = self.sprite_attack
@@ -109,16 +109,16 @@ class Player:
         else:
             current_image = self.animations[self.current_direction][self.current_frame]
             
-        # Jika sedang di Battle Map, perbesar gambarnya saat di-draw
         if is_battle:
-            # Perbesar menjadi 56x56 pixel (bisa disesuaikan ukurannya)
             bigger_image = pygame.transform.scale(current_image, (56, 56))
-            # Sesuaikan posisinya agar tetap di tengah koordinat aslinya
             draw_rect = bigger_image.get_rect(center=self.rect.center)
             surface.blit(bigger_image, draw_rect)
         else:
             surface.blit(current_image, self.rect)
 
+# ==========================================
+# KELAS COMPANION (Vanola)
+# ==========================================
 class Companion:
     def __init__(self, sprite_path):
         self.sprite_sheet = pygame.image.load(sprite_path).convert_alpha()
@@ -187,11 +187,8 @@ class Companion:
             self.current_frame = 0
             self.frame_timer = 0.0
 
-    # --- PERUBAHAN: Tambahkan parameter is_battle ---
     def draw(self, surface, is_battle=False):
         current_image = self.animations[self.current_direction][self.current_frame]
-        
-        # Logika perbesar gambar khusus di Battle Map
         if is_battle:
             bigger_image = pygame.transform.scale(current_image, (56, 56))
             draw_rect = bigger_image.get_rect(center=self.rect.center)
@@ -199,15 +196,20 @@ class Companion:
         else:
             surface.blit(current_image, self.rect)
 
+# ==========================================
+# KELAS HOME (Sistem Menu & UI)
+# ==========================================
 class Home:
     def __init__(self):
         self.state = "menu"
         
         self.background3    = pygame.image.load("Assets/swampmap.png").convert_alpha()
+        # PERBAIKAN: SCREEN WIDTH sekarang menggunakan garis bawah agar tidak error syntax
         self.swamp_map      = pygame.transform.scale(self.background3, (SCREEN_WIDTH, SCREEN_HEIGHT))
         
         self.transition_img = pygame.image.load("Assets/transition.png").convert_alpha()
         self.transition_img = pygame.transform.scale(self.transition_img, (683, 683))
+        self.transition_rect = self.transition_img.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
         
         self.background2    = pygame.image.load("Assets/battlemap.png").convert_alpha()
         self.battle_map     = pygame.transform.scale(self.background2, (SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -285,15 +287,90 @@ class Home:
         elif self.state == "about":
             surface.blit(self.aboutpage, (0, 0))
 
+# ==========================================
+# KELAS ENEMY (Kroco Monster 1 & 2)
+# ==========================================
 class Enemy:
     def __init__(self, target_obj):
-        # 1. Pilih jenis monster secara acak antara 1 atau 2
         monster_type = random.choice([1, 2])
         
-        # Load Sprite Sheet Monster yang dipilih
+        
         self.sprite_sheet = pygame.image.load(f"Assets/Monster{monster_type}.png").convert_alpha()
         
-        # 2. Potong Gambar 4x4 (Mendeteksi otomatis ukuran asli gambarnya)
+        self.frame_width = self.sprite_sheet.get_width() // 4
+        self.frame_height = self.sprite_sheet.get_height() // 4
+        
+        self.animations = {"down": [], "left": [], "right": [], "up": []}
+        
+        directions = ["down", "left", "right", "up"]
+        for row in range(4):
+            direction_name = directions[row]
+            for col in range(4):
+                cut_rect = pygame.Rect(col * self.frame_width, row * self.frame_height, self.frame_width, self.frame_height)
+                single_frame = pygame.Surface((self.frame_width, self.frame_height), pygame.SRCALPHA).convert_alpha()
+                single_frame.blit(self.sprite_sheet, (0, 0), cut_rect)
+                single_frame = pygame.transform.scale(single_frame, (48, 48))
+                self.animations[direction_name].append(single_frame)
+
+        self.current_direction = "down"
+        self.current_frame = 0
+        self.rect = self.animations["down"][0].get_rect()
+        
+        self.target = target_obj 
+        self.speed = 1.5 
+        self.animation_speed = 0.15
+        self.frame_timer = 0.0
+        
+        spawn_edge = random.choice(["top", "bottom", "left", "right"])
+        if spawn_edge == "top":
+            self.exact_x = random.uniform(0, SCREEN_WIDTH)
+            self.exact_y = -60
+        elif spawn_edge == "bottom":
+            self.exact_x = random.uniform(0, SCREEN_WIDTH)
+            self.exact_y = SCREEN_HEIGHT + 60
+        elif spawn_edge == "left":
+            self.exact_x = -60
+            self.exact_y = random.uniform(0, SCREEN_HEIGHT)
+        else: 
+            self.exact_x = SCREEN_WIDTH + 60
+            self.exact_y = random.uniform(0, SCREEN_HEIGHT)
+
+        self.rect.x = int(self.exact_x)
+        self.rect.y = int(self.exact_y)
+
+    def update(self):
+        dx = self.target.exact_x - self.exact_x
+        dy = self.target.exact_y - self.exact_y
+        distance = math.hypot(dx, dy)
+        
+        if distance != 0:
+            self.exact_x += (dx / distance) * self.speed
+            self.exact_y += (dy / distance) * self.speed
+            
+            if abs(dx) > abs(dy):
+                self.current_direction = "right" if dx > 0 else "left"
+            else:
+                self.current_direction = "down" if dy > 0 else "up"
+
+            self.frame_timer += self.animation_speed
+            if self.frame_timer >= 1.0:
+                self.frame_timer = 0.0
+                self.current_frame = (self.current_frame + 1) % 4
+                
+        self.rect.x = int(self.exact_x)
+        self.rect.y = int(self.exact_y)
+
+    def draw(self, surface):
+        current_image = self.animations[self.current_direction][self.current_frame]
+        surface.blit(current_image, self.rect)
+
+# ==========================================
+# KELAS BOSS (Musuh Terakhir - Raksasa & Kuat)
+# ==========================================
+class Boss:
+    def __init__(self, target_obj):
+        self.sprite_sheet = pygame.image.load("Assets/Boss.png").convert_alpha()
+        
         self.frame_width = self.sprite_sheet.get_width() // 4
         self.frame_height = self.sprite_sheet.get_height() // 4
         
@@ -307,58 +384,40 @@ class Enemy:
                 single_frame = pygame.Surface((self.frame_width, self.frame_height), pygame.SRCALPHA).convert_alpha()
                 single_frame.blit(self.sprite_sheet, (0, 0), cut_rect)
                 
-                # Skalakan monster menjadi 48x48 piksel (sedikit lebih besar)
-                single_frame = pygame.transform.scale(single_frame, (48, 48))
+               
+                single_frame = pygame.transform.scale(single_frame, (128, 128))
                 self.animations[direction_name].append(single_frame)
 
-        # 3. Status Awal Animasi
         self.current_direction = "down"
         self.current_frame = 0
         self.rect = self.animations["down"][0].get_rect()
         
         self.target = target_obj 
-        self.speed = 1.5 
-        self.animation_speed = 0.15
+        self.speed = 1.0           
+        self.hp = 15               
+        self.animation_speed = 0.1
         self.frame_timer = 0.0
         
-        # 4. Logika Spawn di Pinggir Layar
-        spawn_edge = random.choice(["top", "bottom", "left", "right"])
-        
-        if spawn_edge == "top":
-            self.exact_x = random.uniform(0, SCREEN_WIDTH)
-            self.exact_y = -60
-        elif spawn_edge == "bottom":
-            self.exact_x = random.uniform(0, SCREEN_WIDTH)
-            self.exact_y = SCREEN_HEIGHT + 60
-        elif spawn_edge == "left":
-            self.exact_x = -60
-            self.exact_y = random.uniform(0, SCREEN_HEIGHT)
-        else: # "right"
-            self.exact_x = SCREEN_WIDTH + 60
-            self.exact_y = random.uniform(0, SCREEN_HEIGHT)
-
+        # Bos muncul secara dramatis dari area atas tengah map rawa
+        self.exact_x = SCREEN_WIDTH // 2 - 48
+        self.exact_y = -100
         self.rect.x = int(self.exact_x)
         self.rect.y = int(self.exact_y)
 
     def update(self):
-        # Hitung selisih jarak menuju target
         dx = self.target.exact_x - self.exact_x
         dy = self.target.exact_y - self.exact_y
-        
         distance = math.hypot(dx, dy)
         
         if distance != 0:
-            # Bergerak menuju target
             self.exact_x += (dx / distance) * self.speed
             self.exact_y += (dy / distance) * self.speed
             
-            # --- TENTUKAN ARAH MENGHADAP BERDASARKAN GERAKAN ---
             if abs(dx) > abs(dy):
                 self.current_direction = "right" if dx > 0 else "left"
             else:
                 self.current_direction = "down" if dy > 0 else "up"
 
-            # --- JALANKAN ANIMASI BERJALAN ---
             self.frame_timer += self.animation_speed
             if self.frame_timer >= 1.0:
                 self.frame_timer = 0.0
@@ -368,10 +427,12 @@ class Enemy:
         self.rect.y = int(self.exact_y)
 
     def draw(self, surface):
-        # Gambar frame monster sesuai arah dan langkahnya saat ini
         current_image = self.animations[self.current_direction][self.current_frame]
         surface.blit(current_image, self.rect)
-    
+
+# ==========================================
+# INITIALIZATION & SIKLUS UTAMA
+# ==========================================
 home_screen = Home()
 player = Player() 
 
@@ -386,6 +447,10 @@ total_spawned = 0
 max_monsters = 20      
 wave_cleared = False  
 transition_timer = 0 
+
+# Objek penampung bos akhir
+final_boss = None
+boss_spawned = False
 
 main.start()
 
@@ -402,8 +467,7 @@ while running:
                 if home_screen.state == "about":
                     home_screen.state = "menu" 
             elif event.key == pygame.K_ESCAPE:
-                # Tambahkan "swamp" agar bisa tekan ESC di map 3
-                if home_screen.state in ["gameplay", "battle", "swamp"]:
+                if home_screen.state in ["gameplay", "battle", "transition", "swamp"]:
                     home_screen.state = "menu"
 
     hx = main.gesture_state['hand_x']
@@ -415,24 +479,33 @@ while running:
     if active:
         home_screen.cursor_update(hx, hy)
         
-        # Tambahkan "swamp" agar karakter bisa bergerak di map 3
         if home_screen.state in ["gameplay", "battle", "swamp"]:
             player.update(direction) 
             vanola.update(player.exact_x, player.exact_y, player.current_direction, player.is_moving)
             
+            # --- LOGIKA TOMBOL ATTACK GESTUR "PEACE" ---
             if action == "attack" and prev_action != "attack":
                 player.trigger_attack()
-                
                 attack_hitbox = player.rect.inflate(80, 80)
                 
-                surviving_enemies = []
-                for enemy in enemies_list:
-                    if not attack_hitbox.colliderect(enemy.rect):
-                        surviving_enemies.append(enemy)
-                    else:
-                        print("M kill") 
-                        
-                enemies_list = surviving_enemies
+                # A. JIKA DI BATTLE MAP (Membunuh Kroco)
+                if home_screen.state == "battle":
+                    surviving_enemies = []
+                    for enemy in enemies_list:
+                        if not attack_hitbox.colliderect(enemy.rect):
+                            surviving_enemies.append(enemy)
+                        else:
+                            print("M kill") 
+                    enemies_list = surviving_enemies
+                
+                # B. JIKA DI SWAMP MAP (Mengurangi Darah Bos)
+                elif home_screen.state == "swamp" and final_boss is not None:
+                    if attack_hitbox.colliderect(final_boss.rect):
+                        final_boss.hp -= 1
+                        print(f"JURUS TEBASAN! HP Boss Berkurang! Sisa HP: {final_boss.hp}")
+                        if final_boss.hp <= 0:
+                            print("💥 FINAL BOSS KALAH! GAME TAMAT! 💥")
+                            final_boss = None # Bos hilang dari layar
         
     if action == "parry" and prev_action != "parry":
         if home_screen.state == "menu":
@@ -443,9 +516,12 @@ while running:
                 player.rect.y = int(player.exact_y)
                 vanola.set_initial_position(player.exact_x, player.exact_y)
                 
+                # Reset data pertempuran dan bos saat mulai ulang dari menu
                 enemies_list.clear() 
                 total_spawned = 0
                 wave_cleared = False
+                final_boss = None
+                boss_spawned = False
                 
                 home_screen.state = "gameplay" 
             elif home_screen.cursor_rect.colliderect(home_screen.about_rect):
@@ -455,7 +531,9 @@ while running:
 
     prev_action = action
 
-    # --- PENGATURAN MENGGAMBAR LAYAR ---
+    # ==========================================
+    # PROSES RENDERING & LOGIKA MAP
+    # ==========================================
     if home_screen.state == "gameplay":
         screen.blit(home_screen.map_1, (0, 0))
         vanola.draw(screen)  
@@ -464,7 +542,6 @@ while running:
         if player.rect.colliderect(home_screen.gate_rect):
             print("Pindah ke Battle Map!")
             home_screen.state = "battle"
-            
             player.exact_x = SCREEN_WIDTH // 2
             player.exact_y = SCREEN_HEIGHT - 150
             player.rect.x = int(player.exact_x)
@@ -487,14 +564,11 @@ while running:
                     total_spawned += 1 
                 spawn_timer = 0 
             
-            # --- LOGIKA PINDAH KE TRANSISI (CUTSCENE) ---
             if total_spawned >= max_monsters and len(enemies_list) == 0:
                 print("STAGE CLEARED! MENAMPILKAN GAMBAR TRANSISI!")
                 wave_cleared = True 
-                
-                # Ganti state ke "transition" DULU, bukan langsung "swamp"
                 home_screen.state = "transition"
-                transition_timer = 0 # Mulai hitung waktu transisinya
+                transition_timer = 0 
 
         for enemy in enemies_list:
             enemy.update()
@@ -503,27 +577,33 @@ while running:
         vanola.draw(screen, is_battle=True)
         player.draw(screen, is_battle=True)
         
-    # --- RENDER GAMBAR TRANSISI ---
     elif home_screen.state == "transition":
-       
-        screen.blit(home_screen.transition_img, (0, 0))
-        
+        screen.fill((0, 0, 0)) # Bersihkan latar belakang menjadi hitam
+        screen.blit(home_screen.transition_img, home_screen.transition_rect)
         
         transition_timer += 1
         if transition_timer >= 180:
             print("WAKTU HABIS! PINDAH KE RAWA-RAWA!")
             home_screen.state = "swamp"
             
-            # Reset posisi karakter untuk map rawa
             player.exact_x = SCREEN_WIDTH // 2
             player.exact_y = SCREEN_HEIGHT - 150
             player.rect.x = int(player.exact_x)
             player.rect.y = int(player.exact_y)
             vanola.set_initial_position(player.exact_x, player.exact_y)
-        
-    # --- RENDER MAP KE-3 ---
+
     elif home_screen.state == "swamp":
         screen.blit(home_screen.swamp_map, (0, 0))
+        
+        # --- MEKANIKA SPAWN BOSS AKHIR ---
+        if not boss_spawned:
+            final_boss = Boss(target_obj=vanola) # Bos muncul dan fokus mengincar Vanola!
+            boss_spawned = True
+            
+        # Jika bos masih hidup, gerakkan dan tampilkan di layar
+        if final_boss is not None:
+            final_boss.update()
+            final_boss.draw(screen)
         
         vanola.draw(screen)  
         player.draw(screen)
@@ -532,6 +612,7 @@ while running:
         home_screen.draw(screen) 
         screen.blit(home_screen.cursor, home_screen.cursor_rect)
 
+    # --- RENDER LAYAR WEBCAM PIP ---
     cam_frame = main.gesture_state["frame"]
     if cam_frame is not None:
         cam_surface = pygame.image.frombuffer(cam_frame.tobytes(), (cam_frame.shape[1], cam_frame.shape[0]), "RGB")
