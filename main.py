@@ -128,7 +128,7 @@ def recognize_action(fingers):
 
     # 🖐️ All fingers + thumb — special
     if fingers_up == 4 and thumb:
-        return "special"
+        return "ultimate"
 
     return None
 
@@ -273,7 +273,7 @@ if __name__ == "__main__":
     print("☝️  Point index finger → move character")
     print("✌️  Index + Middle     → attack")
     print("🤙 Pinky + Thumb      → parry")
-    print("🖐️  Open palm          → special")
+    print("🖐️  Open palm          → ultimate")
     print("✊ Fist               → idle/stop")
     print("Press Ctrl+C to quit.\n")
 

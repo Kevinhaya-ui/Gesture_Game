@@ -58,11 +58,20 @@ class Player:
         self.is_attacking = False
         self.attack_timer = 0
         self.attack_duration = 30
+        
+        try:
+            self.attack_sfx = pygame.mixer.Sound("Assets/attackSF.wav")
+            self.attack_sfx.set_volume(0.2) 
+        except:
+            self.attack_sfx = None
     
     def trigger_attack(self):
         if not self.is_attacking:
             self.is_attacking = True
-            self.attack_timer = self.attack_duration        
+            self.attack_timer = self.attack_duration
+        
+            if self.attack_sfx:
+                self.attack_sfx.play()        
 
     def update(self, direction):
         self.is_moving = False
@@ -197,14 +206,13 @@ class Companion:
             surface.blit(current_image, self.rect)
 
 # ==========================================
-# KELAS HOME (Sistem Menu & UI)
+# KELAS UI & SCENE MANAGER (Home)
 # ==========================================
 class Home:
     def __init__(self):
         self.state = "menu"
         
         self.background3    = pygame.image.load("Assets/swampmap.png").convert_alpha()
-        # PERBAIKAN: SCREEN WIDTH sekarang menggunakan garis bawah agar tidak error syntax
         self.swamp_map      = pygame.transform.scale(self.background3, (SCREEN_WIDTH, SCREEN_HEIGHT))
         
         self.transition_img = pygame.image.load("Assets/transition.png").convert_alpha()
@@ -293,8 +301,6 @@ class Home:
 class Enemy:
     def __init__(self, target_obj):
         monster_type = random.choice([1, 2])
-        
-        
         self.sprite_sheet = pygame.image.load(f"Assets/Monster{monster_type}.png").convert_alpha()
         
         self.frame_width = self.sprite_sheet.get_width() // 4
@@ -383,8 +389,6 @@ class Boss:
                 cut_rect = pygame.Rect(col * self.frame_width, row * self.frame_height, self.frame_width, self.frame_height)
                 single_frame = pygame.Surface((self.frame_width, self.frame_height), pygame.SRCALPHA).convert_alpha()
                 single_frame.blit(self.sprite_sheet, (0, 0), cut_rect)
-                
-               
                 single_frame = pygame.transform.scale(single_frame, (128, 128))
                 self.animations[direction_name].append(single_frame)
 
@@ -398,7 +402,6 @@ class Boss:
         self.animation_speed = 0.1
         self.frame_timer = 0.0
         
-        # Bos muncul secara dramatis dari area atas tengah map rawa
         self.exact_x = SCREEN_WIDTH // 2 - 48
         self.exact_y = -100
         self.rect.x = int(self.exact_x)
@@ -431,13 +434,54 @@ class Boss:
         surface.blit(current_image, self.rect)
 
 # ==========================================
-# INITIALIZATION & SIKLUS UTAMA
+# KELAS PROJECTILE (Jurus Ultimate Bintang)
+# ==========================================
+class StarProjectile:
+    def __init__(self, start_x, start_y, angle):
+        self.image = pygame.image.load("Assets/starULT.png").convert_alpha()
+        self.image = pygame.transform.scale(self.image, (32, 32)) 
+        self.rect = self.image.get_rect(center=(start_x, start_y))
+        
+        self.exact_x = float(start_x)
+        self.exact_y = float(start_y)
+        self.speed = 10.0 
+        
+        rad = math.radians(angle)
+        self.dx = math.cos(rad) * self.speed
+        self.dy = math.sin(rad) * self.speed
+        
+        self.lifetime = 100 
+
+    def update(self):
+        self.exact_x += self.dx
+        self.exact_y += self.dy
+        self.rect.centerx = int(self.exact_x)
+        self.rect.centery = int(self.exact_y)
+        self.lifetime -= 1
+
+    def draw(self, surface):
+        surface.blit(self.image, self.rect)
+
+# ==========================================
+# INITIALIZATION & SETUP
 # ==========================================
 home_screen = Home()
 player = Player() 
 
 vanola = Companion("Assets/vanola.png")
 vanola.set_initial_position(player.exact_x, player.exact_y)
+
+try:
+    death_sfx = pygame.mixer.Sound("Assets/deathSF.wav")
+    death_sfx.set_volume(0.8)
+except:
+    death_sfx = None
+
+try:
+    boss_sfx = pygame.mixer.Sound("Assets/bossSF.wav")
+    boss_sfx.set_volume(0.7)
+except:
+    boss_sfx = None
 
 enemies_list = []      
 spawn_timer = 0        
@@ -448,15 +492,20 @@ max_monsters = 20
 wave_cleared = False  
 transition_timer = 0 
 
-# Objek penampung bos akhir
 final_boss = None
 boss_spawned = False
+
+projectiles_list = []
+ult_cooldown = 0
 
 main.start()
 
 running = True
 prev_action = None
 
+# ==========================================
+# SIKLUS UTAMA GAME (MAIN LOOP)
+# ==========================================
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -496,17 +545,41 @@ while running:
                             surviving_enemies.append(enemy)
                         else:
                             print("M kill") 
+                            if death_sfx:
+                                death_sfx.play()
+                                
                     enemies_list = surviving_enemies
                 
                 # B. JIKA DI SWAMP MAP (Mengurangi Darah Bos)
                 elif home_screen.state == "swamp" and final_boss is not None:
                     if attack_hitbox.colliderect(final_boss.rect):
                         final_boss.hp -= 1
+                        if death_sfx:
+                            death_sfx.play() # Suara bos kena hit
                         print(f"JURUS TEBASAN! HP Boss Berkurang! Sisa HP: {final_boss.hp}")
                         if final_boss.hp <= 0:
                             print("💥 FINAL BOSS KALAH! GAME TAMAT! 💥")
-                            final_boss = None # Bos hilang dari layar
-        
+                            final_boss = None 
+
+            # ==============================================================
+            # --- LOGIKA JURUS ULTIMATE (5 JARI TERANGKAT) ---
+            # ==============================================================
+            if ult_cooldown > 0:
+                ult_cooldown -= 1 
+
+            if action == "ultimate" and prev_action != "ultimate" and ult_cooldown <= 0:
+                print("💥 JURUS ULTIMATE KELUAR! 💥")
+                if player.attack_sfx:
+                    player.attack_sfx.play() 
+                    
+                for i in range(5):
+                    angle = i * 72 
+                    new_star = StarProjectile(player.rect.centerx, player.rect.centery, angle)
+                    projectiles_list.append(new_star)
+                
+                ult_cooldown = 180
+            # ==============================================================
+                   
     if action == "parry" and prev_action != "parry":
         if home_screen.state == "menu":
             if home_screen.cursor_rect.colliderect(home_screen.start_rect):
@@ -516,12 +589,12 @@ while running:
                 player.rect.y = int(player.exact_y)
                 vanola.set_initial_position(player.exact_x, player.exact_y)
                 
-                # Reset data pertempuran dan bos saat mulai ulang dari menu
                 enemies_list.clear() 
                 total_spawned = 0
                 wave_cleared = False
                 final_boss = None
                 boss_spawned = False
+                projectiles_list.clear() # Bersihkan sisa proyektil
                 
                 home_screen.state = "gameplay" 
             elif home_screen.cursor_rect.colliderect(home_screen.about_rect):
@@ -578,7 +651,7 @@ while running:
         player.draw(screen, is_battle=True)
         
     elif home_screen.state == "transition":
-        screen.fill((0, 0, 0)) # Bersihkan latar belakang menjadi hitam
+        screen.fill((0, 0, 0)) 
         screen.blit(home_screen.transition_img, home_screen.transition_rect)
         
         transition_timer += 1
@@ -595,12 +668,12 @@ while running:
     elif home_screen.state == "swamp":
         screen.blit(home_screen.swamp_map, (0, 0))
         
-        # --- MEKANIKA SPAWN BOSS AKHIR ---
         if not boss_spawned:
-            final_boss = Boss(target_obj=vanola) # Bos muncul dan fokus mengincar Vanola!
+            final_boss = Boss(target_obj=vanola) 
             boss_spawned = True
+            if boss_sfx:
+                boss_sfx.play()
             
-        # Jika bos masih hidup, gerakkan dan tampilkan di layar
         if final_boss is not None:
             final_boss.update()
             final_boss.draw(screen)
@@ -611,6 +684,46 @@ while running:
     else:
         home_screen.draw(screen) 
         screen.blit(home_screen.cursor, home_screen.cursor_rect)
+
+
+    # ==============================================================
+    # --- LOGIKA PERGERAKAN & TABRAKAN BINTANG ULTIMATE ---
+    # ==============================================================
+    for star in projectiles_list[:]:
+        star.update()
+        
+        if star.lifetime <= 0:
+            projectiles_list.remove(star)
+            continue
+            
+        if home_screen.state == "battle":
+            star_hit = False
+            for enemy in enemies_list[:]:
+                if star.rect.colliderect(enemy.rect):
+                    enemies_list.remove(enemy)
+                    if death_sfx:
+                        death_sfx.play()
+                    star_hit = True
+                    break 
+            if star_hit:
+                projectiles_list.remove(star)
+
+        elif home_screen.state == "swamp" and final_boss is not None:
+            if star.rect.colliderect(final_boss.rect):
+                final_boss.hp -= 2 
+                if death_sfx:
+                    death_sfx.play()
+                
+                if final_boss.hp <= 0:
+                    print("💥 FINAL BOSS KALAH OLEH ULTIMATE! GAME TAMAT! 💥")
+                    final_boss = None
+                projectiles_list.remove(star)
+
+    if home_screen.state in ["battle", "swamp"]:
+        for star in projectiles_list:
+            star.draw(screen)
+    # ==============================================================
+
 
     # --- RENDER LAYAR WEBCAM PIP ---
     cam_frame = main.gesture_state["frame"]
